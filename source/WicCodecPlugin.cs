@@ -19,7 +19,7 @@ internal static unsafe class WicCodecPlugin
 
     private const string PluginIdString = "Plugin_WicCodec";
     private const string PluginNameString = "WIC Codec";
-    private const string VersionString = "1.2.0";
+    private const string VersionString = "1.3.0";
     private const string CodecIdString = "plugin.wic.codec";
     private const string CodecNameString = "WIC Codec";
     private const string AnimCodecIdString = "plugin.wic.animation";
