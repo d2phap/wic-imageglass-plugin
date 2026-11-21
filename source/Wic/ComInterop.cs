@@ -26,6 +26,7 @@ internal static unsafe partial class ComInterop
     public const int E_NOTIMPL = unchecked((int)0x80004001);
     public const int E_OUTOFMEMORY = unchecked((int)0x8007000E);
 
+    public const uint GENERIC_READ = 0x80000000;
     public const uint GENERIC_WRITE = 0x40000000;
     private const uint COINIT_MULTITHREADED = 0x0;
     private const uint COINIT_DISABLE_OLE1DDE = 0x4;

@@ -261,6 +261,7 @@ internal static unsafe class WicDecode
         }
 
         decoder = opened;
+        WicRaw.PreferRawImageDecoder(factory, path, ref decoder);
         return IGStatus.OK;
     }
 
