@@ -28,12 +28,19 @@ through a second codec the plugin registers (*WIC Animation*). Multi-page format
 keep stepping page by page.
 
 
-## Install
-
-1. Download `wic-codec_<version>_win-x64.igplugin.zip` (or `win-arm64`) from
-   [Releases](https://github.com/d2phap/wic-imageglass-plugin/releases).
-2. ImageGlass → **Settings → Plugins → Add**, and pick the `.igplugin.zip`.
-3. Click **Trust and enable**.
+## Performance vs built-in codecs ([BENCHMARK.md](https://github.com/d2phap/wic-imageglass-plugin/blob/v1.3.0/BENCHMARK.md))
+| | WIC Codec |
+|---|---|
+| Metadata, all formats | 2–32× faster |
+| JPEG | 1.6–3.6× faster |
+| AVIF | 3–5× faster |
+| TIFF | ~5× faster |
+| DDS | 100× faster or more |
+| HEIC / HEIF thumbnails | ~2× faster |
+| Camera RAW full decode | 1.5–1.7× faster |
+| WebP stills | 1.5–2.6× slower |
+| JPEG XL | ~2× slower |
+| JPEG XR, WDP | not supported by built-in |
 
 
 ## Build
