@@ -40,7 +40,7 @@ internal static unsafe class WicFormats
 
     /// <summary>Containers whose frames form a timeline; their extensions go to the animation codec.</summary>
     private static readonly Guid[] _animationContainers =
-        [WIC.GUID_ContainerFormatGif];
+        [WIC.GUID_ContainerFormatGif, WIC.GUID_ContainerFormatWebp];
 
     private static bool IsAnimationContainer(Guid container) => Array.IndexOf(_animationContainers, container) >= 0;
 
@@ -70,7 +70,7 @@ internal static unsafe class WicFormats
     ];
 
 
-    /// <summary>Extensions of the animated containers (GIF), served by the animation codec.</summary>
+    /// <summary>Extensions of the animated containers (GIF, WebP), served by the animation codec.</summary>
     public static string[] AnimationExtensions { get; private set; } = [];
 
     /// <summary>Extensions of the page/still decoders (lowercase, leading dot).</summary>

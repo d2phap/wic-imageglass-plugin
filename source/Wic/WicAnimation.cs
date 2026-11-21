@@ -11,7 +11,7 @@ using Vortice.Win32.Graphics;
 namespace WicCodec.Wic;
 
 /// <summary>
-/// The animation codec: GIF as a timeline, with every frame fully composed on the canvas.
+/// The animation codec: GIF and WebP as timelines, with every frame fully composed on the canvas.
 /// </summary>
 internal static unsafe class WicAnimation
 {
@@ -48,8 +48,15 @@ internal static unsafe class WicAnimation
             status = WicDecode.FillMetadata(factory, decoder, path, outInfo);
             if (status != IGStatus.OK) return status;
 
-            // Mislabeled content (a TIFF named .gif): FrameCount > 1 would start the animator on a page stack.
-            outInfo->FrameCount = Math.Min(outInfo->FrameCount, 1);
+            if (container == WIC.GUID_ContainerFormatWebp)
+            {
+                outInfo->HasAlpha = AnimTimeline.WebpHasAlpha(path) ? 1 : 0;
+            }
+            else
+            {
+                // Mislabeled content (a TIFF named .gif): FrameCount > 1 would start the animator on a page stack.
+                outInfo->FrameCount = Math.Min(outInfo->FrameCount, 1);
+            }
             return IGStatus.OK;
         }
         finally
@@ -120,8 +127,12 @@ internal static unsafe class WicAnimation
             Guid container;
             if (decoder->GetContainerFormat(&container).Failure) container = default;
 
-            // Mislabeled content is a plain WIC still.
-            if (container != WIC.GUID_ContainerFormatGif)
+            var isGif = container == WIC.GUID_ContainerFormatGif;
+            uint frameCount = 0;
+            decoder->GetFrameCount(&frameCount);
+
+            // Frame 0 of a WebP and every other container are plain WIC frames.
+            if (!isGif && (frameIndex == 0 || container != WIC.GUID_ContainerFormatWebp || frameCount <= 1))
             {
                 ComInterop.Release(ref decoder);
                 return maxWidth > 0 && maxHeight > 0
@@ -133,7 +144,7 @@ internal static unsafe class WicAnimation
             if (timeline is null) return IGStatus.DecodeFailed;
             if (frameIndex < 0 || frameIndex >= timeline.FrameCount) return IGStatus.InvalidArg;
 
-            if (frameIndex == 0)
+            if (isGif && frameIndex == 0)
             {
                 // Frame 0 needs no history, so the thumbnail path composes it here and stays parallel.
                 var canvas = new byte[timeline.Width * timeline.Height * 4];
@@ -255,7 +266,7 @@ internal static unsafe class WicAnimation
         var timeline = AnimTimelineCache.Get(path, stamp, size);
         if (timeline is not null) return timeline;
 
-        timeline = AnimTimeline.Read(decoder, container);
+        timeline = AnimTimeline.Read(decoder, container, path);
         if (timeline is not null) AnimTimelineCache.Put(path, stamp, size, timeline);
         return timeline;
     }

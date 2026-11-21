@@ -111,6 +111,14 @@ internal sealed unsafe class AnimPlayer : IDisposable
     {
         if (index < 0 || index >= Timeline.FrameCount) return IGStatus.InvalidArg;
 
+        return Timeline.Kind == AnimKind.Gif
+            ? RenderGif(index, outBuf, cancellation)
+            : RenderWebp(index, outBuf);
+    }
+
+
+    private IGStatus RenderGif(int index, IGPixelBuffer* outBuf, void* cancellation)
+    {
         var t = Timeline;
         _canvas ??= new byte[t.Width * t.Height * 4];
 
@@ -330,6 +338,51 @@ internal sealed unsafe class AnimPlayer : IDisposable
     }
 
 
+    private IGStatus RenderWebp(int index, IGPixelBuffer* outBuf)
+    {
+        IWICBitmapFrameDecode* frame = null;
+        IWICBitmapSource* converted = null;
+        byte* pixels = null;
+
+        try
+        {
+            // WIC composes WebP frames itself and decodes in order cheaply as long as this decoder stays open.
+            if (_decoder->GetFrame((uint)index, &frame).Failure) return IGStatus.DecodeFailed;
+
+            var source = (IWICBitmapSource*)frame;
+            Guid format;
+            if (frame->GetPixelFormat(&format).Failure) format = default;
+            if (format != WIC.GUID_WICPixelFormat32bppBGRA)
+            {
+                var target = WIC.GUID_WICPixelFormat32bppBGRA;
+                if (WIC.WICConvertBitmapSource(&target, source, &converted).Failure) return IGStatus.Unsupported;
+                source = converted;
+            }
+
+            uint width = 0, height = 0;
+            if (source->GetSize(&width, &height).Failure || width == 0 || height == 0) return IGStatus.DecodeFailed;
+
+            var stride = (long)width * 4;
+            var byteCount = stride * height;
+            if (byteCount > int.MaxValue) return IGStatus.OutOfMemory;
+
+            pixels = NativeBuffers.AllocPixels((nuint)byteCount);
+            if (pixels == null) return IGStatus.OutOfMemory;
+            if (source->CopyPixels(null, (uint)stride, (uint)byteCount, pixels).Failure) return IGStatus.DecodeFailed;
+
+            Hand(outBuf, pixels, (int)width, (int)height);
+            pixels = null;
+            return IGStatus.OK;
+        }
+        finally
+        {
+            NativeBuffers.Discard(pixels);
+            ComInterop.Release(ref converted);
+            ComInterop.Release(ref frame);
+        }
+    }
+
+
     /// <summary>Copies a composed canvas into a buffer the host owns.</summary>
     public static IGStatus Publish(byte[] canvas, int width, int height, IGPixelBuffer* outBuf)
     {
@@ -338,13 +391,19 @@ internal sealed unsafe class AnimPlayer : IDisposable
         if (pixels == null) return IGStatus.OutOfMemory;
 
         canvas.AsSpan(0, (int)byteCount).CopyTo(new Span<byte>(pixels, (int)byteCount));
+        Hand(outBuf, pixels, width, height);
+        return IGStatus.OK;
+    }
+
+
+    private static void Hand(IGPixelBuffer* outBuf, byte* pixels, int width, int height)
+    {
         outBuf->Data = pixels;
         outBuf->Width = width;
         outBuf->Height = height;
         outBuf->Stride = width * 4;
         outBuf->PixelFormat = (int)IGPixelFormat.Bgra8Unorm;
         outBuf->ReleaseContext = pixels;
-        return IGStatus.OK;
     }
 
 

@@ -489,7 +489,7 @@ internal static unsafe class WicCodecPlugin
 
 
     /// <summary>
-    /// Builds the animated GIF codec, or leaves it null when no animated container was discovered.
+    /// Builds the GIF/WebP codec, or leaves it null when no animated container was discovered.
     /// </summary>
     private static void InitAnimationCodec()
     {

@@ -8,6 +8,9 @@ using Vortice.Win32.Graphics;
 
 namespace WicCodec.Wic;
 
+internal enum AnimKind { Gif, Webp }
+
+
 /// <summary>
 /// Where one GIF frame lands on the logical screen and what happens to its rect afterwards.
 /// </summary>
@@ -23,6 +26,7 @@ internal sealed unsafe class AnimTimeline
     public const int DISPOSE_BACKGROUND = 2;
     public const int DISPOSE_PREVIOUS = 3;
 
+    public required AnimKind Kind { get; init; }
     public required int Width { get; init; }
     public required int Height { get; init; }
 
@@ -31,7 +35,7 @@ internal sealed unsafe class AnimTimeline
 
     public required int[] DurationsMs { get; init; }
     public required bool[] FrameHasAlpha { get; init; }
-    public required GifFrame[] GifFrames { get; init; }
+    public GifFrame[] GifFrames { get; init; } = [];
 
     public int FrameCount => DurationsMs.Length;
     public bool HasAlpha => Array.IndexOf(FrameHasAlpha, true) >= 0;
@@ -58,16 +62,16 @@ internal sealed unsafe class AnimTimeline
 
 
     /// <summary>
-    /// Reads the timeline of an opened GIF decoder; <c>null</c> for any other container.
+    /// Reads the timeline of an opened GIF or WebP decoder; <c>null</c> for any other container.
     /// </summary>
-    public static AnimTimeline? Read(IWICBitmapDecoder* decoder, Guid container)
+    public static AnimTimeline? Read(IWICBitmapDecoder* decoder, Guid container, string path)
     {
-        if (container != WIC.GUID_ContainerFormatGif) return null;
-
         uint frameCount = 0;
         if (decoder->GetFrameCount(&frameCount).Failure || frameCount == 0) return null;
 
-        return ReadGif(decoder, (int)frameCount);
+        if (container == WIC.GUID_ContainerFormatGif) return ReadGif(decoder, (int)frameCount);
+        if (container == WIC.GUID_ContainerFormatWebp) return ReadWebp(decoder, (int)frameCount, path);
+        return null;
     }
 
 
@@ -141,6 +145,7 @@ internal sealed unsafe class AnimTimeline
 
         var timeline = new AnimTimeline
         {
+            Kind = AnimKind.Gif,
             Width = Math.Max(1, canvasWidth),
             Height = Math.Max(1, canvasHeight),
             LoopCount = loopCount,
@@ -195,6 +200,91 @@ internal sealed unsafe class AnimTimeline
 
         var repeats = data[offset + 1] | (data[offset + 2] << 8);
         return repeats == 0 ? 0 : repeats + 1;
+    }
+
+
+    private static AnimTimeline ReadWebp(IWICBitmapDecoder* decoder, int frameCount, string path)
+    {
+        var durations = new int[frameCount];
+        uint loopCount = 0, width = 0, height = 0;
+
+        IWICMetadataQueryReader* global = null;
+        try
+        {
+            if (decoder->GetMetadataQueryReader(&global).Success)
+            {
+                WicMetadata.TryGetUInt(global, "/ANIM/LoopCount", out loopCount);
+            }
+        }
+        finally
+        {
+            ComInterop.Release(ref global);
+        }
+
+        for (var i = 0; i < frameCount; i++)
+        {
+            IWICBitmapFrameDecode* frame = null;
+            IWICMetadataQueryReader* reader = null;
+            try
+            {
+                if (decoder->GetFrame((uint)i, &frame).Failure) continue;
+                if (i == 0) frame->GetSize(&width, &height);
+
+                uint duration = 0;
+                if (frame->GetMetadataQueryReader(&reader).Success)
+                {
+                    WicMetadata.TryGetUInt(reader, "/ANMF/FrameDuration", out duration);
+                }
+                durations[i] = (int)Math.Min(duration, int.MaxValue);
+            }
+            finally
+            {
+                ComInterop.Release(ref reader);
+                ComInterop.Release(ref frame);
+            }
+        }
+
+        var hasAlpha = WebpHasAlpha(path);
+        var frameAlpha = new bool[frameCount];
+        Array.Fill(frameAlpha, hasAlpha);
+
+        return new AnimTimeline
+        {
+            Kind = AnimKind.Webp,
+            Width = (int)Math.Max(1, width),
+            Height = (int)Math.Max(1, height),
+
+            // WebP's loop count already counts play-throughs.
+            LoopCount = (int)Math.Min(loopCount, int.MaxValue),
+            DurationsMs = durations,
+            FrameHasAlpha = frameAlpha,
+        };
+    }
+
+
+    /// <summary>
+    /// Reads the alpha bit from the WebP header; WIC decodes every WebP to BGRA, so the pixel format cannot tell.
+    /// </summary>
+    public static bool WebpHasAlpha(string path)
+    {
+        try
+        {
+            Span<byte> header = stackalloc byte[25];
+            using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            if (file.ReadAtLeast(header, header.Length, throwOnEndOfStream: false) < header.Length) return true;
+
+            var chunk = header[12..16];
+            if (chunk.SequenceEqual("VP8X"u8)) return (header[20] & 0x10) != 0;
+            if (chunk.SequenceEqual("VP8 "u8)) return false;
+
+            // VP8L: after the 0x2F signature come 14-bit width-1, 14-bit height-1, then alpha_is_used.
+            if (chunk.SequenceEqual("VP8L"u8)) return ((BitConverter.ToUInt32(header[21..25]) >> 28) & 1) != 0;
+            return true;
+        }
+        catch
+        {
+            return true;
+        }
     }
 }
 
