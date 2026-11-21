@@ -167,7 +167,11 @@ internal static unsafe class WicDecode
 
             if (HostChannel.IsCanceled(cancellation)) return IGStatus.Canceled;
 
-            if (sourceFormat != plan.TargetFormat)
+            // Not sourceFormat: the scaler emits its own format, e.g. 128bpp pRGBA float from a half-float frame.
+            Guid currentFormat;
+            if (source->GetPixelFormat(&currentFormat).Failure) currentFormat = default;
+
+            if (currentFormat != plan.TargetFormat)
             {
                 if (!TryConvert(source, ref plan, &converted)) return IGStatus.Unsupported;
                 source = converted;
