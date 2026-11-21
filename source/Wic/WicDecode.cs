@@ -133,6 +133,7 @@ internal static unsafe class WicDecode
         IWICImagingFactory* factory = null;
         IWICBitmapDecoder* decoder = null;
         IWICBitmapFrameDecode* frame = null;
+        IWICBitmapSource* preview = null;
         IWICBitmapScaler* scaler = null;
         IWICBitmapSource* converted = null;
         IWICBitmapFlipRotator* rotator = null;
@@ -158,10 +159,13 @@ internal static unsafe class WicDecode
             // converter does not forward. The rotator is format-agnostic, and rotating the
             // smaller pre-conversion buffer would still need a second pass afterwards.
             var source = (IWICBitmapSource*)frame;
-            if (maxWidth > 0 && maxHeight > 0)
+            if (maxWidth > 0 && maxHeight > 0 && TryFitBox(source, ReadOrientation(frame),
+                (uint)maxWidth, (uint)maxHeight, out var fitWidth, out var fitHeight))
             {
-                var scaled = TryScale(factory, source, ReadOrientation(frame),
-                    (uint)maxWidth, (uint)maxHeight, &scaler);
+                // A camera's embedded preview is a fraction of the cost of demosaicing the sensor data.
+                if (WicRaw.IsRawDecoder(decoder)) preview = WicRaw.TryEmbeddedPreview(frame, fitWidth, fitHeight);
+
+                var scaled = ScaleTo(factory, preview != null ? preview : source, fitWidth, fitHeight, &scaler);
                 if (scaled != null) source = scaled;
             }
 
@@ -225,6 +229,7 @@ internal static unsafe class WicDecode
             ComInterop.Release(ref rotator);
             ComInterop.Release(ref converted);
             ComInterop.Release(ref scaler);
+            ComInterop.Release(ref preview);
             ComInterop.Release(ref frame);
             ComInterop.Release(ref decoder);
             ComInterop.Release(ref factory);
@@ -267,36 +272,53 @@ internal static unsafe class WicDecode
 
 
     /// <summary>
-    /// Wraps <paramref name="frame"/> in a scaler that fits the box, or returns <c>null</c> when
-    /// the frame already fits (or the scaler cannot be set up, which is not fatal).
+    /// Wraps <paramref name="source"/> in a scaler that fits the box, or returns <c>null</c> when it already fits or the scaler fails.
     /// </summary>
-    /// <remarks>
-    /// The box applies to the UPRIGHT image, so a 90/270 degree orientation swaps the axes before
-    /// the ratio is taken; the resulting scale then applies to the unrotated frame either way.
-    /// </remarks>
     public static IWICBitmapSource* TryScale(IWICImagingFactory* factory,
-        IWICBitmapSource* frame, int orientation, uint maxWidth, uint maxHeight,
+        IWICBitmapSource* source, int orientation, uint maxWidth, uint maxHeight,
         IWICBitmapScaler** outScaler)
     {
-        uint srcWidth = 0, srcHeight = 0;
-        if (frame->GetSize(&srcWidth, &srcHeight).Failure) return null;
-        if (srcWidth == 0 || srcHeight == 0) return null;
+        if (!TryFitBox(source, orientation, maxWidth, maxHeight, out var width, out var height)) return null;
 
+        return ScaleTo(factory, source, width, height, outScaler);
+    }
+
+
+    /// <summary>
+    /// Gets the unrotated size that fits <paramref name="source"/> in the box, or returns <c>false</c> when it already fits.
+    /// </summary>
+    private static bool TryFitBox(IWICBitmapSource* source, int orientation, uint maxWidth, uint maxHeight,
+        out uint width, out uint height)
+    {
+        width = height = 0;
+
+        uint srcWidth = 0, srcHeight = 0;
+        if (source->GetSize(&srcWidth, &srcHeight).Failure) return false;
+        if (srcWidth == 0 || srcHeight == 0) return false;
+
+        // The box applies to the upright image, so a 90/270 degree orientation swaps the axes first.
         var uprightWidth = SwapsAxes(orientation) ? srcHeight : srcWidth;
         var uprightHeight = SwapsAxes(orientation) ? srcWidth : srcHeight;
 
         var scale = Math.Min((double)maxWidth / uprightWidth, (double)maxHeight / uprightHeight);
-        if (scale >= 1) return null;
+        if (scale >= 1) return false;
 
-        var targetWidth = Math.Max(1u, (uint)Math.Round(srcWidth * scale));
-        var targetHeight = Math.Max(1u, (uint)Math.Round(srcHeight * scale));
-        if (targetWidth >= srcWidth && targetHeight >= srcHeight) return null;
+        width = Math.Max(1u, (uint)Math.Round(srcWidth * scale));
+        height = Math.Max(1u, (uint)Math.Round(srcHeight * scale));
+        return width < srcWidth || height < srcHeight;
+    }
 
+
+    /// <summary>
+    /// Wraps <paramref name="source"/> in a scaler to the given size, or returns <c>null</c> when the scaler cannot be set up.
+    /// </summary>
+    private static IWICBitmapSource* ScaleTo(IWICImagingFactory* factory, IWICBitmapSource* source,
+        uint width, uint height, IWICBitmapScaler** outScaler)
+    {
         if (factory->CreateBitmapScaler(outScaler).Failure) return null;
 
         // Fant is WIC's box/averaging filter: the right one for a big downscale.
-        if ((*outScaler)->Initialize(frame, targetWidth, targetHeight,
-            WICBitmapInterpolationMode.ModeFant).Failure)
+        if ((*outScaler)->Initialize(source, width, height, WICBitmapInterpolationMode.ModeFant).Failure)
         {
             ComInterop.Release(ref *outScaler);
             return null;

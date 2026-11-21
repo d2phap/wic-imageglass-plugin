@@ -27,6 +27,41 @@ internal static unsafe class WicRaw
 
 
     /// <summary>
+    /// Whether <paramref name="decoder"/> is a camera raw decoder, whose frame thumbnail is the camera's own preview.
+    /// </summary>
+    public static bool IsRawDecoder(IWICBitmapDecoder* decoder)
+    {
+        var clsid = DecoderClsid(decoder);
+        return clsid == RawImageDecoder || clsid == LegacyDngDecoder;
+    }
+
+
+    /// <summary>
+    /// Returns the frame's embedded preview (owned by the caller) if it covers the minimum size at the frame's aspect ratio.
+    /// </summary>
+    public static IWICBitmapSource* TryEmbeddedPreview(IWICBitmapFrameDecode* frame, uint minWidth, uint minHeight)
+    {
+        uint frameWidth = 0, frameHeight = 0;
+        if (((IWICBitmapSource*)frame)->GetSize(&frameWidth, &frameHeight).Failure
+            || frameWidth == 0 || frameHeight == 0) return null;
+
+        IWICBitmapSource* preview = null;
+        if (frame->GetThumbnail(&preview).Failure || preview == null) return null;
+
+        uint width = 0, height = 0;
+        preview->GetSize(&width, &height);
+
+        // A different ratio means letterboxing or a crop, and a smaller one would be upscaled.
+        var frameRatio = (double)frameWidth / frameHeight;
+        var usable = width >= minWidth && height >= minHeight && height > 0
+            && Math.Abs((double)width / height - frameRatio) <= frameRatio * 0.02;
+
+        if (!usable) ComInterop.Release(ref preview);
+        return preview;
+    }
+
+
+    /// <summary>
     /// Replaces the legacy DNG decoder with the Raw Image decoder when that one opens the file with a larger frame.
     /// </summary>
     public static void PreferRawImageDecoder(IWICImagingFactory* factory, string path, ref IWICBitmapDecoder* decoder)
