@@ -51,18 +51,18 @@ foreach ($runtime in $Rid) {
     $staged = Join-Path $root "dist/staging/$runtime/$pluginFolder"
 
     Write-Host "`n=== publishing $runtime ===" -ForegroundColor Cyan
+
+    # Publish never prunes its output folder, so leftovers from an older build would be packed.
+    if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
     dotnet publish (Join-Path $root 'source/WicCodec.csproj') `
         --configuration Release --runtime $runtime -p:Platform=$platform --output $publishDir
     if ($LASTEXITCODE -ne 0) { throw "publish failed for $runtime" }
 
-    # Ship only what the host loads. libSkiaSharp rides along from the ImageGlass.SDK package
-    # reference, but this plugin never calls Skia and ImageGlass ships its own copy, so a
-    # second one is ~12 MB of dead weight.
+    # Ship only what the host loads: no debug symbols, no IntelliSense docs.
     if (Test-Path $staged) { Remove-Item $staged -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $staged | Out-Null
     Get-ChildItem $publishDir -File |
         Where-Object { $_.Extension -notin '.pdb', '.xml' } |
-        Where-Object { $_.Name -notlike 'libSkiaSharp*' } |
         Copy-Item -Destination $staged
 
     foreach ($required in 'WicCodec.dll', 'igplugin.json') {

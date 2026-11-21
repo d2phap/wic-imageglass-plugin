@@ -6,8 +6,7 @@ https://github.com/d2phap/wic-imageglass-plugin
 */
 using Vortice.Win32;
 using Vortice.Win32.Com;
-using Vortice.Win32.Graphics.Imaging;
-using Apis = Vortice.Win32.Graphics.Imaging.Apis;
+using Vortice.Win32.Graphics;
 
 namespace WicCodec.Wic;
 
@@ -39,17 +38,17 @@ internal static unsafe class WicFormats
 
     private static readonly (string Ext, Guid Container)[] _fallbackEncodeTargets =
     [
-        (".bmp", Apis.GUID_ContainerFormatBmp),
-        (".dib", Apis.GUID_ContainerFormatBmp),
-        (".gif", Apis.GUID_ContainerFormatGif),
-        (".jpg", Apis.GUID_ContainerFormatJpeg),
-        (".jpeg", Apis.GUID_ContainerFormatJpeg),
-        (".png", Apis.GUID_ContainerFormatPng),
-        (".tif", Apis.GUID_ContainerFormatTiff),
-        (".tiff", Apis.GUID_ContainerFormatTiff),
-        (".jxr", Apis.GUID_ContainerFormatWmp),
-        (".hdp", Apis.GUID_ContainerFormatWmp),
-        (".wdp", Apis.GUID_ContainerFormatWmp),
+        (".bmp", WIC.GUID_ContainerFormatBmp),
+        (".dib", WIC.GUID_ContainerFormatBmp),
+        (".gif", WIC.GUID_ContainerFormatGif),
+        (".jpg", WIC.GUID_ContainerFormatJpeg),
+        (".jpeg", WIC.GUID_ContainerFormatJpeg),
+        (".png", WIC.GUID_ContainerFormatPng),
+        (".tif", WIC.GUID_ContainerFormatTiff),
+        (".tiff", WIC.GUID_ContainerFormatTiff),
+        (".jxr", WIC.GUID_ContainerFormatWmp),
+        (".hdp", WIC.GUID_ContainerFormatWmp),
+        (".wdp", WIC.GUID_ContainerFormatWmp),
     ];
 
     /// <summary>
@@ -59,7 +58,7 @@ internal static unsafe class WicFormats
     /// </summary>
     private static readonly (Guid Container, string[] Extensions)[] _containerAliases =
     [
-        (Apis.GUID_ContainerFormatWmp, [".jxr", ".wdp", ".hdp"]),
+        (WIC.GUID_ContainerFormatWmp, [".jxr", ".wdp", ".hdp"]),
     ];
 
 
@@ -135,8 +134,8 @@ internal static unsafe class WicFormats
         var encoders = new Dictionary<string, EncoderTarget>(StringComparer.OrdinalIgnoreCase);
         foreach (var (ext, container) in _fallbackEncodeTargets)
         {
-            var multi = container == Apis.GUID_ContainerFormatTiff || container == Apis.GUID_ContainerFormatGif;
-            encoders[ext] = new EncoderTarget(container, multi, container == Apis.GUID_ContainerFormatGif, true);
+            var multi = container == WIC.GUID_ContainerFormatTiff || container == WIC.GUID_ContainerFormatGif;
+            encoders[ext] = new EncoderTarget(container, multi, container == WIC.GUID_ContainerFormatGif, true);
         }
 
         _encoders = encoders;
@@ -185,8 +184,8 @@ internal static unsafe class WicFormats
         HashSet<string> seen, HashSet<Guid> containers)
     {
         IEnumUnknown* enumerator = null;
-        if (factory->CreateComponentEnumerator((uint)Apis.WICDecoder,
-            (uint)Apis.WICComponentEnumerateDefault, &enumerator).Failure) return;
+        if (factory->CreateComponentEnumerator((uint)WIC.WICDecoder,
+            (uint)WIC.WICComponentEnumerateDefault, &enumerator).Failure) return;
 
         try
         {
@@ -226,14 +225,14 @@ internal static unsafe class WicFormats
     private static void EnumerateEncoders(IWICImagingFactory* factory, Dictionary<string, EncoderTarget> into)
     {
         IEnumUnknown* enumerator = null;
-        if (factory->CreateComponentEnumerator((uint)Apis.WICEncoder,
-            (uint)Apis.WICComponentEnumerateDefault, &enumerator).Failure) return;
+        if (factory->CreateComponentEnumerator((uint)WIC.WICEncoder,
+            (uint)WIC.WICComponentEnumerateDefault, &enumerator).Failure) return;
 
         try
         {
             var codecIid = IWICBitmapCodecInfo.IID_IWICBitmapCodecInfo;
-            var builtInVendor = Apis.GUID_VendorMicrosoftBuiltIn;
-            var msVendor = Apis.GUID_VendorMicrosoft;
+            var builtInVendor = WIC.GUID_VendorMicrosoftBuiltIn;
+            var msVendor = WIC.GUID_VendorMicrosoft;
             IUnknown* unknown = null;
             uint fetched = 0;
 

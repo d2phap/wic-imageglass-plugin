@@ -6,8 +6,7 @@ https://github.com/d2phap/wic-imageglass-plugin
 */
 using ImageGlass.SDK.Plugins;
 using Vortice.Win32;
-using Vortice.Win32.Graphics.Imaging;
-using Apis = Vortice.Win32.Graphics.Imaging.Apis;
+using Vortice.Win32.Graphics;
 
 namespace WicCodec.Wic;
 
@@ -45,9 +44,9 @@ internal static unsafe class WicPixels
     {
         // HDR10 is the one format whose transfer function is not implied by its numeric
         // representation: 10-bit unsigned integers carrying PQ-encoded values.
-        if (sourceFormat == Apis.GUID_WICPixelFormat32bppR10G10B10A2HDR10)
+        if (sourceFormat == WIC.GUID_WICPixelFormat32bppR10G10B10A2HDR10)
         {
-            return new PixelPlan(Apis.GUID_WICPixelFormat64bppRGBAHalf,
+            return new PixelPlan(WIC.GUID_WICPixelFormat64bppRGBAHalf,
                 IGPixelFormat.RgbaFloat16, 8, IGHdrTransferFn.PQ, true);
         }
 
@@ -65,7 +64,7 @@ internal static unsafe class WicPixels
             // Linear is the pre-1.1 spelling: wrong by 203/80, but an old host at least tone-maps.
             var extendedFn = HostSupportsScRgb ? IGHdrTransferFn.ScRgb : IGHdrTransferFn.Linear;
 
-            return new PixelPlan(Apis.GUID_WICPixelFormat64bppRGBAHalf,
+            return new PixelPlan(WIC.GUID_WICPixelFormat64bppRGBAHalf,
                 IGPixelFormat.RgbaFloat16, 8, extendedFn, hasAlpha);
         }
 
@@ -73,11 +72,11 @@ internal static unsafe class WicPixels
         // keep their precision; everything else lands on plain BGRA8.
         if (bpp > 32 && representation != WICPixelFormatNumericRepresentation.Indexed)
         {
-            return new PixelPlan(Apis.GUID_WICPixelFormat64bppRGBA,
+            return new PixelPlan(WIC.GUID_WICPixelFormat64bppRGBA,
                 IGPixelFormat.Rgba16Unorm, 8, IGHdrTransferFn.None, hasAlpha);
         }
 
-        return new PixelPlan(Apis.GUID_WICPixelFormat32bppBGRA,
+        return new PixelPlan(WIC.GUID_WICPixelFormat32bppBGRA,
             IGPixelFormat.Bgra8Unorm, 4, IGHdrTransferFn.None, hasAlpha);
     }
 
@@ -92,7 +91,7 @@ internal static unsafe class WicPixels
         {
             return plan with
             {
-                TargetFormat = Apis.GUID_WICPixelFormat64bppRGBA,
+                TargetFormat = WIC.GUID_WICPixelFormat64bppRGBA,
                 IgFormat = IGPixelFormat.Rgba16Unorm,
                 BytesPerPixel = 8,
                 // Half-float was refused, so the extended range cannot survive the round trip;
@@ -103,7 +102,7 @@ internal static unsafe class WicPixels
 
         return plan with
         {
-            TargetFormat = Apis.GUID_WICPixelFormat32bppBGRA,
+            TargetFormat = WIC.GUID_WICPixelFormat32bppBGRA,
             IgFormat = IGPixelFormat.Bgra8Unorm,
             BytesPerPixel = 4,
             Hdr = IGHdrTransferFn.None,

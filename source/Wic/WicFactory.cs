@@ -5,8 +5,7 @@ MIT License
 https://github.com/d2phap/wic-imageglass-plugin
 */
 using Vortice.Win32;
-using Vortice.Win32.Graphics.Imaging;
-using Apis = Vortice.Win32.Graphics.Imaging.Apis;
+using Vortice.Win32.Graphics;
 
 namespace WicCodec.Wic;
 
@@ -30,7 +29,7 @@ internal static unsafe class WicFactory
     {
         if (!ComInterop.EnsureApartment()) return null;
 
-        var clsid = Apis.CLSID_WICImagingFactory;
+        var clsid = WIC.CLSID_WICImagingFactory;
         var iid = IWICImagingFactory.IID_IWICImagingFactory;
         IWICImagingFactory* factory = null;
 

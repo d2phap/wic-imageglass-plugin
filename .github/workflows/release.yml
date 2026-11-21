@@ -48,10 +48,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup .NET 10 SDK
+      - name: Setup .NET 11 SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       - name: Stamp the manifest version
         # igplugin.json is what ImageGlass shows in Settings > Plugins, so keep it in
@@ -75,11 +75,8 @@ jobs:
 
       - name: Stage the plugin folder
         # Lay the payload out as the folder users copy into ImageGlass's _plugins directory,
-        # minus three things:
+        # minus two things:
         #   - debug symbols (.pdb);
-        #   - libSkiaSharp: it rides along from the ImageGlass.SDK package reference, but this
-        #     plugin never calls Skia and ImageGlass ships its own copy next to the executable,
-        #     so a bundled second one is ~12 MB of dead weight;
         #   - .xml: the SDK's IntelliSense docs, ~120 KB of nothing the host ever reads.
         shell: pwsh
         run: |
@@ -87,7 +84,6 @@ jobs:
           New-Item -ItemType Directory -Force -Path $staged | Out-Null
           Get-ChildItem "dist/${{ matrix.rid }}" -File |
             Where-Object { $_.Extension -notin ".pdb", ".xml" } |
-            Where-Object { $_.Name -notlike "libSkiaSharp*" } |
             Copy-Item -Destination $staged
           Get-ChildItem $staged | Select-Object Name, Length
 

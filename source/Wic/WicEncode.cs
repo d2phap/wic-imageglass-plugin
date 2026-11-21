@@ -8,8 +8,7 @@ using ImageGlass.SDK.Plugins;
 using System.Runtime.InteropServices;
 using Vortice.Win32;
 using Vortice.Win32.Com;
-using Vortice.Win32.Graphics.Imaging;
-using Apis = Vortice.Win32.Graphics.Imaging.Apis;
+using Vortice.Win32.Graphics;
 
 namespace WicCodec.Wic;
 
@@ -295,7 +294,7 @@ internal static unsafe class WicEncode
         var container = target.ContainerFormat;
         if (factory->CreateEncoder(&container, null, outEncoder).Failure) return IGStatus.Unsupported;
 
-        return (*outEncoder)->Initialize((IStream*)*outStream, Apis.WICBitmapEncoderNoCache).Failure
+        return (*outEncoder)->Initialize((IStream*)*outStream, WIC.WICBitmapEncoderNoCache).Failure
             ? IGStatus.EncodeFailed
             : IGStatus.OK;
     }
@@ -335,7 +334,7 @@ internal static unsafe class WicEncode
             // SetPixelFormat is in/out: the encoder rewrites it to the closest format it
             // supports, and WriteSource then converts into that.
             var requested = options != null && options->PreserveAlpha == 0
-                ? Apis.GUID_WICPixelFormat24bppBGR
+                ? WIC.GUID_WICPixelFormat24bppBGR
                 : format;
             frame->SetPixelFormat(&requested);
             frame->SetResolution(96.0, 96.0);
@@ -393,7 +392,7 @@ internal static unsafe class WicEncode
     /// </summary>
     private static void ApplyFrameDelay(IWICBitmapFrameEncode* frame, in EncoderTarget target, int durationMs)
     {
-        if (target.ContainerFormat != Apis.GUID_ContainerFormatGif) return;
+        if (target.ContainerFormat != WIC.GUID_ContainerFormatGif) return;
 
         IWICMetadataQueryWriter* writer = null;
         try
@@ -419,7 +418,7 @@ internal static unsafe class WicEncode
     /// </summary>
     private static void WriteLoopExtension(Session session)
     {
-        if (session.Target.ContainerFormat != Apis.GUID_ContainerFormatGif) return;
+        if (session.Target.ContainerFormat != WIC.GUID_ContainerFormatGif) return;
 
         IWICMetadataQueryWriter* writer = null;
         try
@@ -540,10 +539,10 @@ internal static unsafe class WicEncode
     /// </summary>
     private static Guid MapSourceFormat(IGPixelFormat format) => format switch
     {
-        IGPixelFormat.Bgra8Unorm => Apis.GUID_WICPixelFormat32bppBGRA,
-        IGPixelFormat.Rgba8Unorm => Apis.GUID_WICPixelFormat32bppRGBA,
-        IGPixelFormat.Rgba16Unorm => Apis.GUID_WICPixelFormat64bppRGBA,
-        IGPixelFormat.RgbaFloat16 => Apis.GUID_WICPixelFormat64bppRGBAHalf,
+        IGPixelFormat.Bgra8Unorm => WIC.GUID_WICPixelFormat32bppBGRA,
+        IGPixelFormat.Rgba8Unorm => WIC.GUID_WICPixelFormat32bppRGBA,
+        IGPixelFormat.Rgba16Unorm => WIC.GUID_WICPixelFormat64bppRGBA,
+        IGPixelFormat.RgbaFloat16 => WIC.GUID_WICPixelFormat64bppRGBAHalf,
         _ => Guid.Empty,
     };
 }

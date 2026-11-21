@@ -34,7 +34,7 @@ and 20 writable extensions:
 
 ## Build
 
-Requires the .NET 10 SDK and the Visual Studio C++ build tools (Native AOT links natively).
+Requires the .NET 11 SDK and the Visual Studio C++ build tools (Native AOT links natively).
 
 ```powershell
 # compile only – quick syntax check

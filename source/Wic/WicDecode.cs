@@ -7,8 +7,7 @@ https://github.com/d2phap/wic-imageglass-plugin
 using ImageGlass.SDK.Plugins;
 using Vortice.Win32;
 using Vortice.Win32.Com;
-using Vortice.Win32.Graphics.Imaging;
-using Apis = Vortice.Win32.Graphics.Imaging.Apis;
+using Vortice.Win32.Graphics;
 
 namespace WicCodec.Wic;
 
@@ -225,11 +224,11 @@ internal static unsafe class WicDecode
         if (factory == null) return IGStatus.Internal;
 
         IWICBitmapDecoder* opened = null;
-        HResult hr;
+        HRESULT hr;
         fixed (char* pPath = path)
         {
             hr = factory->CreateDecoderFromFilename(pPath, null, NativeFileAccess.GenericRead,
-                Apis.WICDecodeMetadataCacheOnDemand, &opened);
+                WIC.WICDecodeMetadataCacheOnDemand, &opened);
         }
 
         if (hr.Failure)
@@ -298,7 +297,7 @@ internal static unsafe class WicDecode
             // WICConvertBitmapSource, not IWICImagingFactory.CreateFormatConverter: the helper
             // walks the registered converters, so it also finds the high-color and WMPhoto ones
             // that the default converter cannot stand in for.
-            if (Apis.WICConvertBitmapSource(&target, source, result).Success) return true;
+            if (WIC.WICConvertBitmapSource(&target, source, result).Success) return true;
 
             var degraded = WicPixels.Degrade(in plan);
             if (degraded.TargetFormat == plan.TargetFormat) return false;
@@ -322,7 +321,7 @@ internal static unsafe class WicDecode
             foreach (var query in _orientationQueries)
             {
                 ComInterop.PropVariant value = default;
-                HResult hr;
+                HRESULT hr;
                 fixed (char* pQuery = query)
                 {
                     hr = reader->GetMetadataByName(pQuery, (Variant**)&value);
@@ -405,9 +404,9 @@ internal static unsafe class WicDecode
                 WICColorContextType type;
                 if (context->GetType(&type).Failure) continue;
 
-                if (type == Apis.WICColorContextProfile && TryPublishProfile(context, outInfo)) return;
+                if (type == WIC.WICColorContextProfile && TryPublishProfile(context, outInfo)) return;
 
-                if (type == Apis.WICColorContextExifColorSpace)
+                if (type == WIC.WICColorContextExifColorSpace)
                 {
                     uint exifSpace = 0;
                     if (context->GetExifColorSpace(&exifSpace).Failure) continue;
