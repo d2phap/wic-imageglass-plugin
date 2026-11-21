@@ -100,6 +100,38 @@ internal static unsafe class NativeBuffers
     }
 
 
+    // IGAnimationInfo.Frames arrays the host has not handed back through FreeAnimationInfo yet.
+    private static readonly HashSet<nint> _liveFrameTables = [];
+
+
+    /// <summary>Allocates an <see cref="ImageGlass.SDK.Plugins.IGAnimationFrameInfo"/> array the host releases via FreeAnimationInfo.</summary>
+    public static ImageGlass.SDK.Plugins.IGAnimationFrameInfo* AllocFrameTable(int count)
+    {
+        var block = (ImageGlass.SDK.Plugins.IGAnimationFrameInfo*)NativeMemory.AllocZeroed(
+            (nuint)(sizeof(ImageGlass.SDK.Plugins.IGAnimationFrameInfo) * Math.Max(1, count)));
+        lock (_lock)
+        {
+            _liveFrameTables.Add((nint)block);
+        }
+        return block;
+    }
+
+
+    /// <summary>Frees a table from <see cref="AllocFrameTable"/> once; refuses anything else.</summary>
+    public static bool FreeFrameTable(void* block)
+    {
+        if (block == null) return false;
+
+        lock (_lock)
+        {
+            if (!_liveFrameTables.Remove((nint)block)) return false;
+        }
+
+        NativeMemory.Free(block);
+        return true;
+    }
+
+
     /// <summary>Allocates a null-terminated, process-lifetime UTF-16 copy of a string.</summary>
     public static char* AllocUtf16(string value)
     {

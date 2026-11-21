@@ -37,13 +37,32 @@ internal static unsafe class WicDecode
     {
         IWICImagingFactory* factory = null;
         IWICBitmapDecoder* decoder = null;
-        IWICBitmapFrameDecode* frame = null;
 
         try
         {
             var status = Open(path, cancellation, ref factory, ref decoder);
             if (status != IGStatus.OK) return status;
 
+            return FillMetadata(factory, decoder, path, outInfo);
+        }
+        finally
+        {
+            ComInterop.Release(ref decoder);
+            ComInterop.Release(ref factory);
+        }
+    }
+
+
+    /// <summary>
+    /// Fills <paramref name="outInfo"/> from the first frame of an already opened decoder.
+    /// </summary>
+    public static IGStatus FillMetadata(IWICImagingFactory* factory, IWICBitmapDecoder* decoder,
+        string path, IGImageInfo* outInfo)
+    {
+        IWICBitmapFrameDecode* frame = null;
+
+        try
+        {
             uint frameCount = 0;
             decoder->GetFrameCount(&frameCount);
             if (frameCount == 0) frameCount = 1;
@@ -81,8 +100,6 @@ internal static unsafe class WicDecode
         finally
         {
             ComInterop.Release(ref frame);
-            ComInterop.Release(ref decoder);
-            ComInterop.Release(ref factory);
         }
     }
 
@@ -143,7 +160,7 @@ internal static unsafe class WicDecode
             var source = (IWICBitmapSource*)frame;
             if (maxWidth > 0 && maxHeight > 0)
             {
-                var scaled = TryScale(factory, frame, ReadOrientation(frame),
+                var scaled = TryScale(factory, source, ReadOrientation(frame),
                     (uint)maxWidth, (uint)maxHeight, &scaler);
                 if (scaled != null) source = scaled;
             }
@@ -215,7 +232,7 @@ internal static unsafe class WicDecode
     /// Creates a factory and opens <paramref name="path"/> with whichever installed decoder
     /// claims the content.
     /// </summary>
-    private static IGStatus Open(string path, void* cancellation,
+    public static IGStatus Open(string path, void* cancellation,
         ref IWICImagingFactory* factory, ref IWICBitmapDecoder* decoder)
     {
         if (HostChannel.IsCanceled(cancellation)) return IGStatus.Canceled;
@@ -252,12 +269,12 @@ internal static unsafe class WicDecode
     /// The box applies to the UPRIGHT image, so a 90/270 degree orientation swaps the axes before
     /// the ratio is taken; the resulting scale then applies to the unrotated frame either way.
     /// </remarks>
-    private static IWICBitmapSource* TryScale(IWICImagingFactory* factory,
-        IWICBitmapFrameDecode* frame, int orientation, uint maxWidth, uint maxHeight,
+    public static IWICBitmapSource* TryScale(IWICImagingFactory* factory,
+        IWICBitmapSource* frame, int orientation, uint maxWidth, uint maxHeight,
         IWICBitmapScaler** outScaler)
     {
         uint srcWidth = 0, srcHeight = 0;
-        if (((IWICBitmapSource*)frame)->GetSize(&srcWidth, &srcHeight).Failure) return null;
+        if (frame->GetSize(&srcWidth, &srcHeight).Failure) return null;
         if (srcWidth == 0 || srcHeight == 0) return null;
 
         var uprightWidth = SwapsAxes(orientation) ? srcHeight : srcWidth;
@@ -273,7 +290,7 @@ internal static unsafe class WicDecode
         if (factory->CreateBitmapScaler(outScaler).Failure) return null;
 
         // Fant is WIC's box/averaging filter: the right one for a big downscale.
-        if ((*outScaler)->Initialize((IWICBitmapSource*)frame, targetWidth, targetHeight,
+        if ((*outScaler)->Initialize(frame, targetWidth, targetHeight,
             WICBitmapInterpolationMode.ModeFant).Failure)
         {
             ComInterop.Release(ref *outScaler);
@@ -451,7 +468,7 @@ internal static unsafe class WicDecode
     }
 
 
-    private static long FileSizeOf(string path)
+    public static long FileSizeOf(string path)
     {
         try
         {

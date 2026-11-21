@@ -22,6 +22,8 @@ internal static unsafe class WicCodecPlugin
     private const string VersionString = "1.2.0";
     private const string CodecIdString = "plugin.wic.codec";
     private const string CodecNameString = "WIC Codec";
+    private const string AnimCodecIdString = "plugin.wic.animation";
+    private const string AnimCodecNameString = "WIC Animation";
 
     // Above SkiaSharp (100) and Magick.NET (10/100) for every extension WIC claims. Enabling a
     // plugin is an explicit act of trust, so the host honors this verbatim; the per-extension
@@ -35,6 +37,10 @@ internal static unsafe class WicCodecPlugin
     private static IGPluginApi* _pluginApi;
     private static IGCodecApi* _codecApi;
     private static IGCodecCapability* _capability;
+
+    // A second codec because animation is a per-codec flag and the host animates every FrameCount > 1 file of such a codec, page stacks included.
+    private static IGCodecApi* _animCodecApi;
+    private static IGCodecCapability* _animCapability;
 
 
     // ------------------------------ Entry point ------------------------------
@@ -59,6 +65,7 @@ internal static unsafe class WicCodecPlugin
             WicFormats.Discover();
             InitCapability();
             InitCodecApi();
+            InitAnimationCodec();
             InitPluginApi();
         }
         catch (Exception ex)
@@ -78,17 +85,25 @@ internal static unsafe class WicCodecPlugin
     private static IGStatus OnInitialize() => IGStatus.OK;
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static void OnShutdown() { }
+    private static void OnShutdown()
+    {
+        // The worker thread holds decoders and file copies; nothing may run once the host unloads us.
+        try { AnimWorker.Stop(); } catch { }
+    }
 
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static IGStatus OnGetCodec(int index, IGCodecApi** outCodecApi)
     {
         if (outCodecApi == null) return IGStatus.InvalidArg;
-        if (index != 0) { *outCodecApi = null; return IGStatus.InvalidArg; }
 
-        *outCodecApi = _codecApi;
-        return IGStatus.OK;
+        *outCodecApi = index switch
+        {
+            0 => _codecApi,
+            1 => _animCodecApi,
+            _ => null,
+        };
+        return *outCodecApi != null ? IGStatus.OK : IGStatus.InvalidArg;
     }
 
 
@@ -268,6 +283,149 @@ internal static unsafe class WicCodecPlugin
     }
 
 
+    // ------------------------------ Animation codec callbacks ------------------------------
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static IGStatus AnimGetCapability(IGCodecCapability** outCap)
+    {
+        if (outCap == null) return IGStatus.InvalidArg;
+
+        *outCap = _animCapability;
+        return IGStatus.OK;
+    }
+
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static int AnimCanHandleExtension(IGStringRef ext)
+    {
+        if (ext.Data == null || ext.Length <= 0) return 0;
+
+        var value = new ReadOnlySpan<char>(ext.Data, ext.Length);
+        foreach (var supported in WicFormats.AnimationExtensions)
+        {
+            if (value.Equals(supported, StringComparison.OrdinalIgnoreCase)) return 1;
+        }
+        return 0;
+    }
+
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static IGStatus AnimLoadMetadata(IGStringRef filePath, IGImageInfo* outInfo, void* cancellation)
+    {
+        if (outInfo == null) return IGStatus.InvalidArg;
+        *outInfo = default;
+
+        try
+        {
+            if (!TryGetPath(filePath, out var path)) return IGStatus.InvalidArg;
+            return WicAnimation.LoadMetadata(path, outInfo, cancellation);
+        }
+        catch (Exception ex)
+        {
+            HostChannel.Log(4, $"WicCodec: animation LoadMetadata failed. {ex}");
+            return IGStatus.Internal;
+        }
+    }
+
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static IGStatus AnimDecodeStaticRaster(IGStringRef filePath, int frameIndex,
+        IGPixelBuffer* outBuf, void* cancellation)
+        => AnimDecodeStill(filePath, frameIndex, 0, 0, outBuf, cancellation);
+
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static IGStatus AnimDecodeStaticRasterScaled(IGStringRef filePath, int frameIndex,
+        int maxWidth, int maxHeight, IGPixelBuffer* outBuf, void* cancellation)
+    {
+        if (maxWidth <= 0 || maxHeight <= 0) return IGStatus.InvalidArg;
+        return AnimDecodeStill(filePath, frameIndex, maxWidth, maxHeight, outBuf, cancellation);
+    }
+
+
+    private static IGStatus AnimDecodeStill(IGStringRef filePath, int frameIndex, int maxWidth, int maxHeight,
+        IGPixelBuffer* outBuf, void* cancellation)
+    {
+        if (outBuf == null) return IGStatus.InvalidArg;
+        *outBuf = default;
+
+        try
+        {
+            if (!TryGetPath(filePath, out var path)) return IGStatus.InvalidArg;
+            return WicAnimation.DecodeStill(path, frameIndex, maxWidth, maxHeight, outBuf, cancellation);
+        }
+        catch (OutOfMemoryException)
+        {
+            return IGStatus.OutOfMemory;
+        }
+        catch (Exception ex)
+        {
+            HostChannel.Log(4, $"WicCodec: animation still decode failed. {ex}");
+            return IGStatus.Internal;
+        }
+    }
+
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static IGStatus AnimGetAnimationInfo(IGStringRef filePath, IGAnimationInfo* outInfo, void* cancellation)
+    {
+        if (outInfo == null) return IGStatus.InvalidArg;
+        *outInfo = default;
+
+        try
+        {
+            if (!TryGetPath(filePath, out var path)) return IGStatus.InvalidArg;
+            return WicAnimation.GetAnimationInfo(path, outInfo, cancellation);
+        }
+        catch (OutOfMemoryException)
+        {
+            return IGStatus.OutOfMemory;
+        }
+        catch (Exception ex)
+        {
+            HostChannel.Log(4, $"WicCodec: GetAnimationInfo failed. {ex}");
+            return IGStatus.Internal;
+        }
+    }
+
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void AnimFreeAnimationInfo(IGAnimationInfo* info)
+    {
+        if (info == null || info->Frames == null) return;
+
+        try
+        {
+            WicAnimation.FreeAnimationInfo(info);
+        }
+        catch { }
+    }
+
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static IGStatus AnimDecodeAnimationFrame(IGStringRef filePath, int frameIndex,
+        IGPixelBuffer* outBuf, void* cancellation)
+    {
+        if (outBuf == null) return IGStatus.InvalidArg;
+        *outBuf = default;
+
+        try
+        {
+            if (!TryGetPath(filePath, out var path)) return IGStatus.InvalidArg;
+            return WicAnimation.DecodeAnimationFrame(path, frameIndex, outBuf, cancellation);
+        }
+        catch (OutOfMemoryException)
+        {
+            return IGStatus.OutOfMemory;
+        }
+        catch (Exception ex)
+        {
+            HostChannel.Log(4, $"WicCodec: DecodeAnimationFrame failed. {ex}");
+            return IGStatus.Internal;
+        }
+    }
+
+
     // ------------------------------ Table construction ------------------------------
 
     private static void InitCapability()
@@ -293,9 +451,7 @@ internal static unsafe class WicCodecPlugin
         _capability->DecodeExtensionCount = decodeExtensions.Length;
         _capability->DecodeExtensions = MakeStringRefArray(decodeExtensions);
 
-        // WIC exposes multi-frame files as a page container with no timeline, which is what
-        // FrameCount > 1 without SupportsAnimationDecoding means to the host: the frame
-        // navigator steps through them and DecodeStaticRaster serves each one.
+        // Page stacks only (TIFF, ICO, HEIF...): the host steps their frames through DecodeStaticRaster.
         _capability->SupportsAnimationDecoding = 0;
 
         _capability->SupportsStaticRasterEncoding = encodeExtensions.Length > 0 ? 1 : 0;
@@ -332,6 +488,51 @@ internal static unsafe class WicCodecPlugin
     }
 
 
+    /// <summary>
+    /// Builds the animated GIF codec, or leaves it null when no animated container was discovered.
+    /// </summary>
+    private static void InitAnimationCodec()
+    {
+        var extensions = WicFormats.AnimationExtensions;
+
+        // An empty extension list is the host's catch-all, so with nothing to claim the codec is not offered at all.
+        if (extensions.Length == 0) return;
+
+        _animCapability = (IGCodecCapability*)NativeMemory.AllocZeroed((nuint)sizeof(IGCodecCapability));
+        _animCapability->StructSize = sizeof(IGCodecCapability);
+        _animCapability->CodecId = MakeStringRef(AnimCodecIdString);
+        _animCapability->CodecName = MakeStringRef(AnimCodecNameString);
+
+        _animCapability->MetadataPriority = Priority;
+        _animCapability->DecodePriority = Priority;
+        _animCapability->EncodePriority = Priority;
+
+        _animCapability->SupportsMetadata = 1;
+        _animCapability->SupportsColorProfiles = 1;
+        _animCapability->SupportsStaticRasterDecoding = 1;
+        _animCapability->SupportsAnimationDecoding = 1;
+        _animCapability->DecodeExtensionCount = extensions.Length;
+        _animCapability->DecodeExtensions = MakeStringRefArray(extensions);
+
+        // Writing GIF stays with the main codec, whose encoder list already covers it.
+        _animCapability->SupportsStaticRasterEncoding = 0;
+        _animCapability->SupportsMultiFrameEncoding = 0;
+
+        _animCodecApi = (IGCodecApi*)NativeMemory.AllocZeroed((nuint)sizeof(IGCodecApi));
+        _animCodecApi->StructSize = sizeof(IGCodecApi);
+        _animCodecApi->GetCapability = &AnimGetCapability;
+        _animCodecApi->CanHandleExtension = &AnimCanHandleExtension;
+        _animCodecApi->CanHandleSignature = null;
+        _animCodecApi->LoadMetadata = &AnimLoadMetadata;
+        _animCodecApi->DecodeStaticRaster = &AnimDecodeStaticRaster;
+        _animCodecApi->DecodeStaticRasterScaled = &AnimDecodeStaticRasterScaled;
+        _animCodecApi->FreePixelBuffer = &CodecFreePixelBuffer;
+        _animCodecApi->GetAnimationInfo = &AnimGetAnimationInfo;
+        _animCodecApi->FreeAnimationInfo = &AnimFreeAnimationInfo;
+        _animCodecApi->DecodeAnimationFrame = &AnimDecodeAnimationFrame;
+    }
+
+
     private static void InitPluginApi()
     {
         _pluginApi = (IGPluginApi*)NativeMemory.AllocZeroed((nuint)sizeof(IGPluginApi));
@@ -343,7 +544,7 @@ internal static unsafe class WicCodecPlugin
             Name = MakeStringRef(PluginNameString),
             Version = MakeStringRef(VersionString),
             AbiVersion = IGNativeAbi.IG_PLUGIN_ABI_VERSION,
-            CodecCount = 1,
+            CodecCount = _animCodecApi != null ? 2 : 1,
         };
         _pluginApi->GetCodec = &OnGetCodec;
         _pluginApi->Initialize = &OnInitialize;

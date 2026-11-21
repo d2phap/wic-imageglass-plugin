@@ -33,8 +33,16 @@ internal static unsafe class WicFormats
     /// whose component registry we could not read.
     /// </summary>
     private static readonly string[] _fallbackDecodeExtensions =
-        [".bmp", ".dib", ".gif", ".ico", ".cur", ".jpg", ".jpeg", ".jpe", ".jfif", ".exif",
+        [".bmp", ".dib", ".ico", ".cur", ".jpg", ".jpeg", ".jpe", ".jfif", ".exif",
          ".png", ".tif", ".tiff", ".jxr", ".hdp", ".wdp", ".dds"];
+
+    private static readonly string[] _fallbackAnimationExtensions = [".gif"];
+
+    /// <summary>Containers whose frames form a timeline; their extensions go to the animation codec.</summary>
+    private static readonly Guid[] _animationContainers =
+        [WIC.GUID_ContainerFormatGif];
+
+    private static bool IsAnimationContainer(Guid container) => Array.IndexOf(_animationContainers, container) >= 0;
 
     private static readonly (string Ext, Guid Container)[] _fallbackEncodeTargets =
     [
@@ -62,7 +70,10 @@ internal static unsafe class WicFormats
     ];
 
 
-    /// <summary>Extensions any installed WIC decoder claims (lowercase, leading dot).</summary>
+    /// <summary>Extensions of the animated containers (GIF), served by the animation codec.</summary>
+    public static string[] AnimationExtensions { get; private set; } = [];
+
+    /// <summary>Extensions of the page/still decoders (lowercase, leading dot).</summary>
     public static string[] DecodeExtensions { get; private set; } = [];
 
     /// <summary>Extensions any installed WIC encoder claims (lowercase, leading dot).</summary>
@@ -94,25 +105,27 @@ internal static unsafe class WicFormats
         try
         {
             var decode = new List<string>();
+            var animation = new List<string>();
             var decodeSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var decodeContainers = new HashSet<Guid>();
             var encoders = new Dictionary<string, EncoderTarget>(StringComparer.OrdinalIgnoreCase);
 
-            EnumerateDecoders(factory, decode, decodeSeen, decodeContainers);
+            EnumerateDecoders(factory, decode, animation, decodeSeen, decodeContainers);
             EnumerateEncoders(factory, encoders);
             ApplyContainerAliases(decode, decodeSeen, decodeContainers, encoders);
 
-            if (decode.Count == 0 || encoders.Count == 0)
+            if (decode.Count + animation.Count == 0 || encoders.Count == 0)
             {
                 ApplyFallback();
                 return;
             }
 
             DecodeExtensions = [.. decode];
+            AnimationExtensions = [.. animation];
             _encoders = encoders;
             EncodeExtensions = [.. encoders.Keys];
 
-            HostChannel.Log(2, $"WicCodec: {DecodeExtensions.Length} readable, "
+            HostChannel.Log(2, $"WicCodec: {DecodeExtensions.Length} readable, {AnimationExtensions.Length} animated, "
                 + $"{EncodeExtensions.Length} writable extensions discovered.");
         }
         catch (Exception ex)
@@ -130,6 +143,7 @@ internal static unsafe class WicFormats
     private static void ApplyFallback()
     {
         DecodeExtensions = _fallbackDecodeExtensions;
+        AnimationExtensions = _fallbackAnimationExtensions;
 
         var encoders = new Dictionary<string, EncoderTarget>(StringComparer.OrdinalIgnoreCase);
         foreach (var (ext, container) in _fallbackEncodeTargets)
@@ -181,7 +195,7 @@ internal static unsafe class WicFormats
 
 
     private static void EnumerateDecoders(IWICImagingFactory* factory, List<string> into,
-        HashSet<string> seen, HashSet<Guid> containers)
+        List<string> animationInto, HashSet<string> seen, HashSet<Guid> containers)
     {
         IEnumUnknown* enumerator = null;
         if (factory->CreateComponentEnumerator((uint)WIC.WICDecoder,
@@ -201,11 +215,13 @@ internal static unsafe class WicFormats
                     if (unknown->QueryInterface(&codecIid, (void**)&info).Failure) continue;
 
                     Guid container;
-                    if (info->GetContainerFormat(&container).Success) containers.Add(container);
+                    if (info->GetContainerFormat(&container).Failure) container = Guid.Empty;
+                    else containers.Add(container);
 
+                    var target = IsAnimationContainer(container) ? animationInto : into;
                     foreach (var ext in ReadExtensions(info))
                     {
-                        if (seen.Add(ext)) into.Add(ext);
+                        if (seen.Add(ext)) target.Add(ext);
                     }
                 }
                 finally

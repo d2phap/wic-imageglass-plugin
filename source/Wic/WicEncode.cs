@@ -420,13 +420,16 @@ internal static unsafe class WicEncode
     {
         if (session.Target.ContainerFormat != WIC.GUID_ContainerFormatGif) return;
 
+        // LoopCount counts play-throughs but the block counts repeats after the first, and only its absence means "once".
+        if (session.LoopCount == 1) return;
+
         IWICMetadataQueryWriter* writer = null;
         try
         {
             if (session.Encoder->GetMetadataQueryWriter(&writer).Failure) return;
 
             var application = "NETSCAPE2.0"u8;
-            var loops = (ushort)Math.Clamp(session.LoopCount, 0, ushort.MaxValue);
+            var loops = (ushort)Math.Clamp(session.LoopCount <= 0 ? 0 : session.LoopCount - 1, 0, ushort.MaxValue);
             Span<byte> data = [3, 1, (byte)(loops & 0xFF), (byte)(loops >> 8)];
 
             fixed (byte* pApplication = application)

@@ -140,6 +140,7 @@ internal static unsafe partial class ComInterop
 
     public const ushort VT_UI1 = 17;
     public const ushort VT_UI2 = 18;
+    public const ushort VT_UI4 = 19;
     public const ushort VT_R4 = 4;
     public const ushort VT_BOOL = 11;
     public const ushort VT_VECTOR = 0x1000;

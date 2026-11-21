@@ -23,6 +23,10 @@ and 20 writable extensions:
 | **Read** | `.bmp` `.dib` `.rle` `.gif` `.ico` `.icon` `.cur` `.jpeg` `.jpe` `.jpg` `.jfif` `.exif` `.png` `.tiff` `.tif` `.dng` `.wdp` `.jxr` `.hdp` `.dds` `.heic` `.heif` `.hif` `.avci` `.heics` `.heifs` `.avcs` `.avif` `.avifs` `.webp` `.jxl` + camera raw (`.3fr` `.ari` `.arw` `.bay` `.cap` `.cr2` `.cr3` `.crw` `.dcs` `.dcr` `.drf` `.eip` `.erf` `.fff` `.iiq` `.k25` `.kdc` `.mef` `.mos` `.mrw` `.nef` `.nrw` `.orf` `.ori` `.pef` `.ptx` `.pxn` `.raf` `.raw` `.rw2` `.rwl` `.sr2` `.srf` `.srw` `.x3f`) |
 | **Write** | `.bmp` `.dib` `.rle` `.gif` `.jpeg` `.jpe` `.jpg` `.jfif` `.exif` `.png` `.tiff` `.tif` `.wdp` `.jxr` `.hdp` `.dds` `.heic` `.heif` `.hif` `.jxl` |
 
+Animated **GIF** plays as an animation, with its own frame timing and loop count, through a
+second codec the plugin registers (*WIC Animation*). Multi-page formats such as TIFF keep
+stepping page by page.
+
 
 ## Install
 
